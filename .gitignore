@@ -18,6 +18,7 @@ build/
 supabase/.temp/
 supabase/.env
 supabase/.env.*
+supabase/.branches/
 
 # OS / editor
 .DS_Store
