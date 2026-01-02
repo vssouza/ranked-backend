@@ -1,0 +1,25 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+
+# Supabase local artifacts
+.supabase/
+supabase/.temp/
+supabase/.env
+supabase/.env.*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
