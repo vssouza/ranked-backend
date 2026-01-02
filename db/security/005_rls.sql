@@ -6,21 +6,7 @@
 --   tournaments, tournament_staff, tournament_entries
 -- =========================================================
 
--- -----------------------------
--- Helper: current_user_id()
--- -----------------------------
--- Wrapper so policies don't sprinkle auth.uid() everywhere.
-create or replace function public.current_user_id()
-returns uuid
-language sql
-stable
-as $$
-  select coalesce(
-    auth.uid(),
-    nullif(current_setting('request.jwt.claim.sub', true), '')::uuid,
-    nullif(current_setting('app.current_user_id', true), '')::uuid
-  );
-$$;
+-- NOTE: current_user_id() is defined earlier in 013_create_members.sql (helpers moved earlier).
 
 -- -----------------------------
 -- Helper: org status
