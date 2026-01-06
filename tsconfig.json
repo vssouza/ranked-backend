@@ -3,6 +3,11 @@
     "rootDir": "./src",
     "outDir": "./dist",
 
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+
     "module": "nodenext",
     "target": "es2022",
     "lib": ["es2022"],

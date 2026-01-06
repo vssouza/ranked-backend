@@ -1,18 +1,13 @@
-import * as http from "node:http";
+import { buildApp } from "./app.js";
 
 const port = Number(process.env.PORT) || 3000;
+const host = "0.0.0.0";
 
-const server = http.createServer((req, res) => {
-  if (req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("ok");
-    return;
-  }
+const app = buildApp();
 
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("ranked-backend is running");
-});
+await app.ready();
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`Server listening on http://localhost:${port}`);
+app.listen({ port, host }).catch((err) => {
+  app.log.error(err);
+  process.exit(1);
 });
