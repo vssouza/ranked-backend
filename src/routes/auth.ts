@@ -10,34 +10,25 @@ const ExchangeBody = z.object({
 });
 
 function newCsrfToken() {
-  // URL-safe, header-safe token
   return crypto.randomBytes(32).toString("base64url");
 }
 
 export async function registerAuthRoutes(app: FastifyInstance) {
-  /**
-   * Exchange provider token -> backend session cookie
-   */
   app.post("/auth/exchange", async (req, reply) => {
     const {accessToken} = ExchangeBody.parse(req.body);
 
-    // 1) Identify provider (SSO-ready)
     const provider = "supabase";
 
-    // 2) Validate token with provider
     const {data, error} = await supabaseAuth.auth.getUser(accessToken);
     if (error || !data?.user) {
       return reply.code(401).send({error: "Invalid token"});
     }
 
     const user = data.user;
-
-    // 3) Extract provider subject + profile
-    const subject = user.id; // provider-specific stable ID
+    const subject = user.id;
     const email = user.email ?? "";
     const displayName = "";
 
-    // 4) Upsert member (Option A identity mapping)
     const {rows} = await db.query(
       `
       insert into public.members (
@@ -58,10 +49,9 @@ export async function registerAuthRoutes(app: FastifyInstance) {
 
     const member = rows[0];
 
-    // 5) Create backend session
     req.session.set("memberId", member.internal_id);
+    req.session.set("sessionIssuedAt", Date.now());
 
-    // 6) Create CSRF token for cookie-based auth
     const csrfToken = newCsrfToken();
     req.session.set("csrfToken", csrfToken);
 
@@ -70,15 +60,18 @@ export async function registerAuthRoutes(app: FastifyInstance) {
 
   /**
    * Refresh backend session + rotate CSRF token
-   * (Does NOT refresh Supabase access token — client handles that.)
    */
   app.get("/auth/refresh-session", async (req, reply) => {
+    // If authContext cleared the session due to absolute TTL, signal that explicitly
+    if (req.authExpiredReason === "ABSOLUTE_TTL") {
+      return reply.code(401).send({error: "SESSION_EXPIRED_ABSOLUTE_TTL"});
+    }
+
     const memberId = req.session.get("memberId") as string | undefined;
     if (!memberId) return reply.code(401).send({error: "Unauthorized"});
 
-    // authContextPlugin should have loaded req.member if memberId is valid
     if (!req.member) {
-      // Session refers to a missing member row; clear it
+      // Could be missing member row or missing issuedAt; treat as generic unauthorized
       req.session.delete();
       return reply.code(401).send({error: "Unauthorized"});
     }
@@ -86,7 +79,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     const csrfToken = newCsrfToken();
     req.session.set("csrfToken", csrfToken);
 
-    // Optional: return minimal data so the client can update UI if needed
     return reply.send({
       ok: true,
       csrfToken,
@@ -99,9 +91,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     });
   });
 
-  /**
-   * Logout (clears session cookie)
-   */
   app.post("/auth/logout", async (req, reply) => {
     req.session.delete();
     return reply.send({ok: true});

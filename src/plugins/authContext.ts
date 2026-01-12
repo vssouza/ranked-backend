@@ -9,6 +9,8 @@ declare module "fastify" {
       username: string | null;
       display_name: string;
     };
+    // request-scoped reason (not stored in session)
+    authExpiredReason?: "ABSOLUTE_TTL" | "MISSING_ISSUED_AT" | "MISSING_MEMBER";
   }
 }
 
@@ -21,16 +23,43 @@ function intFromEnv(name: string, fallback: number) {
 
 export default fp(async (app) => {
   app.decorateRequest("member", null);
+  app.decorateRequest("authExpiredReason", undefined);
 
   app.addHook("preHandler", async (req) => {
     const memberId = req.session.get("memberId") as string | undefined;
     if (!memberId) return;
 
-    // Rolling idle timeout (sliding expiration)
+    /**
+     * Absolute max session age ("true logout")
+     * If enabled, this caps session lifetime even if the user is active.
+     */
+    const absoluteTtlSeconds = intFromEnv("SESSION_ABSOLUTE_TTL_SECONDS", 0);
+    if (absoluteTtlSeconds > 0) {
+      const issuedAt = req.session.get("sessionIssuedAt") as number | undefined;
+
+      // If missing, force re-login (safer than guessing)
+      if (!issuedAt) {
+        req.session.delete();
+        req.member = null;
+        req.authExpiredReason = "MISSING_ISSUED_AT";
+        return;
+      }
+
+      const ageMs = Date.now() - issuedAt;
+      if (ageMs > absoluteTtlSeconds * 1000) {
+        req.session.delete();
+        req.member = null;
+        req.authExpiredReason = "ABSOLUTE_TTL";
+        return;
+      }
+    }
+
+    /**
+     * Rolling idle timeout (sliding expiration)
+     */
     const rolling = (process.env.SESSION_ROLLING ?? "true") === "true";
     if (rolling) {
       const ttlSeconds = intFromEnv("SESSION_TTL_SECONDS", 24 * 60 * 60);
-      // Extend cookie expiry on activity
       req.session.options({maxAge: ttlSeconds});
       req.session.touch();
     }
@@ -47,6 +76,7 @@ export default fp(async (app) => {
     if (!rows[0]) {
       req.session.delete();
       req.member = null;
+      req.authExpiredReason = "MISSING_MEMBER";
       return;
     }
 
