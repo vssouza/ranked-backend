@@ -1,10 +1,15 @@
 import Fastify from "fastify";
-import { ZodError } from "zod";
-import { registerMeRoute } from "./routes/me.js"
-import { registerMemberAddressesRoutes } from "./routes/member-addresses.js";
+import {ZodError} from "zod";
+
+import sessionPlugin from "./plugins/session.js";
+import authContextPlugin from "./plugins/authContext.js";
+
+import {registerAuthRoutes} from "./routes/auth.js";
+import {registerMeRoute} from "./routes/me.js";
+import {registerMemberAddressesRoutes} from "./routes/member-addresses.js";
 
 export function buildApp() {
-  const app = Fastify({ logger: true });
+  const app = Fastify({logger: true});
 
   app.setErrorHandler((error, _req, reply) => {
     if (error instanceof ZodError) {
@@ -16,13 +21,25 @@ export function buildApp() {
         })),
       });
     }
+
+    // Keep Fastify default error serialization/status handling
     return reply.send(error);
   });
 
   app.get("/health", async () => "ok");
 
-  registerMeRoute(app)
-  registerMemberAddressesRoutes(app);
+  // 1) Cookies + encrypted session
+  app.register(sessionPlugin);
+
+  // 2) Load req.member from session (if present)
+  app.register(authContextPlugin);
+
+  // 3) Register routes as plugins (recommended)
+  app.register(async (routes) => {
+    registerAuthRoutes(routes);
+    registerMeRoute(routes);
+    registerMemberAddressesRoutes(routes);
+  });
 
   return app;
 }

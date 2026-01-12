@@ -1,33 +1,65 @@
-import type { FastifyInstance } from "fastify";
-import {
-  ListMemberAddressesResponseSchema,
-} from "@/schemas/member-addresses.schema.js";
+import type {FastifyInstance} from "fastify";
+import {db} from "@/lib/db.js";
+import {ListMemberAddressesResponseSchema} from "@/schemas/member-addresses.schema.js";
+
+function emptyToNull(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t.length === 0 ? null : t;
+}
 
 export async function registerMemberAddressesRoutes(app: FastifyInstance) {
-  app.get("/member-addresses", async () => {
+  app.get("/member-addresses", async (req, reply) => {
+    if (!req.member) return reply.code(401).send({error: "Unauthorized"});
+
+    const memberId = req.member.internal_id;
+
+    const {rows} = await db.query(
+      `
+      select
+        id,
+        member_id,
+        label,
+        full_name,
+        line1,
+        line2,
+        city,
+        region,
+        postal_code,
+        country,
+        phone,
+        is_default,
+        created_at,
+        updated_at
+      from public.member_addresses
+      where member_id = $1
+      order by is_default desc, created_at desc
+      `,
+      [memberId]
+    );
+
     const data = {
-      items: [
-        {
-          id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-          memberId: "9b2c0b6e-2c8e-4a2b-8b2d-5a7c2f5b0f13",
+      items: rows.map((r) => ({
+        id: r.id,
+        memberId: r.member_id,
 
-          label: "Home",
-          fullName: "John Doe",
+        label: emptyToNull(r.label),
+        fullName: emptyToNull(r.full_name),
 
-          line1: "123 Main Street",
-          line2: null,
-          city: "Springfield",
-          region: "IL",
-          postalCode: "62701",
-          country: "US",
-          phone: null,
+        line1: String(r.line1).trim(),
+        line2: emptyToNull(r.line2),
+        city: String(r.city).trim(),
+        region: emptyToNull(r.region),
+        postalCode: emptyToNull(r.postal_code),
+        country: String(r.country).trim(),
+        phone: emptyToNull(r.phone),
 
-          isDefault: true,
+        isDefault: Boolean(r.is_default),
 
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ],
+        createdAt: new Date(r.created_at).toISOString(),
+        updatedAt: new Date(r.updated_at).toISOString(),
+      })),
     };
 
     return ListMemberAddressesResponseSchema.parse(data);
