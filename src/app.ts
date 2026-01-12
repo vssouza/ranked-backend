@@ -3,6 +3,7 @@ import {ZodError} from "zod";
 
 import sessionPlugin from "./plugins/session.js";
 import authContextPlugin from "./plugins/authContext.js";
+import csrfPlugin from "./plugins/csrf.js";
 
 import {registerAuthRoutes} from "./routes/auth.js";
 import {registerMeRoute} from "./routes/me.js";
@@ -34,7 +35,10 @@ export function buildApp() {
   // 2) Load req.member from session (if present)
   app.register(authContextPlugin);
 
-  // 3) Register routes as plugins (recommended)
+  // 3) CSRF protection for cookie auth (unsafe methods)
+  app.register(csrfPlugin);
+
+  // 4) Register routes
   app.register(async (routes) => {
     registerAuthRoutes(routes);
     registerMeRoute(routes);
