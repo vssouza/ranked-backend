@@ -1,29 +1,38 @@
-import type {FastifyInstance} from "fastify";
-import {db} from "@/lib/db.js";
-import {MeResponseSchema} from "@/schemas/me.schema.js";
+import type { FastifyInstance } from "fastify"
+import { db } from "@/lib/db.js"
+import { exists } from "@/lib/db-helpers.js"
+import { MeResponseSchema } from "@/schemas/me.schema.js"
+
+type MembershipRow = {
+  organisation_id: string
+  roles: string[] | null
+  slug: string
+  name: string
+}
 
 function pickRole(
   roles: string[] | null | undefined
 ): "owner" | "admin" | "organiser" | "member" {
-  const set = new Set((roles ?? []).map((r) => String(r).toUpperCase()));
-  if (set.has("OWNER")) return "owner";
-  if (set.has("ADMIN")) return "admin";
-  if (set.has("ORGANISER") || set.has("ORGANIZER")) return "organiser";
-  return "member";
+  const set = new Set((roles ?? []).map((r) => String(r).toUpperCase()))
+  if (set.has("OWNER")) return "owner"
+  if (set.has("ADMIN")) return "admin"
+  if (set.has("ORGANISER") || set.has("ORGANIZER")) return "organiser"
+  return "member"
 }
 
 export async function registerMeRoute(app: FastifyInstance) {
   app.get("/me", async (req, reply) => {
-    if (!req.member) return reply.code(401).send({error: "Unauthorized"});
+    if (!req.member) return reply.code(401).send({ error: "Unauthorized" })
 
-    const memberId = req.member.internal_id;
+    const memberId = req.member.internal_id
 
-    const [admins, memberships, addresses] = await Promise.all([
-      db.query(
+    const [isSuperAdmin, memberships, hasAddresses] = await Promise.all([
+      exists(
+        db,
         `select 1 from public.ranked_admins where member_id = $1 limit 1`,
         [memberId]
       ),
-      db.query(
+      db.query<MembershipRow>(
         `
         select
           m.organisation_id,
@@ -39,20 +48,21 @@ export async function registerMeRoute(app: FastifyInstance) {
         `,
         [memberId]
       ),
-      db.query(
+      exists(
+        db,
         `select 1 from public.member_addresses where member_id = $1 limit 1`,
         [memberId]
       ),
-    ]);
+    ])
 
     const payload = {
       user: {
         id: memberId,
         email: req.member.email,
-        username: req.member.username ?? "", // schema requires string
+        username: req.member.username ?? "",
         displayName: req.member.display_name ?? "",
       },
-      isSuperAdmin: admins.rowCount > 0,
+      isSuperAdmin,
       memberships: memberships.rows.map((r) => ({
         org: {
           id: r.organisation_id,
@@ -61,9 +71,9 @@ export async function registerMeRoute(app: FastifyInstance) {
         },
         role: pickRole(r.roles),
       })),
-      hasAddresses: addresses.rowCount > 0,
-    };
+      hasAddresses,
+    }
 
-    return MeResponseSchema.parse(payload);
-  });
+    return MeResponseSchema.parse(payload)
+  })
 }
