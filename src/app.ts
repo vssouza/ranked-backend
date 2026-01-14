@@ -1,3 +1,5 @@
+import "dotenv/config";
+import "./env"   
 import Fastify from "fastify";
 import {ZodError} from "zod";
 

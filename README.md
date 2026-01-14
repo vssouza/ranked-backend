@@ -25,3 +25,11 @@ SESSION_KEY_BASE64
 SESSION_ABSOLUTE_TTL_SECONDS=2592000
 
 SESSION_COOKIE_SECURE=true (on Render)
+
+NODE_ENV=development | production
+
+APP_BASE_URL=https://api.yourdomain.com
+
+SESSION_COOKIE_DOMAIN=.rankedapp.gg
+
+LOG_LEVEL=debug | info | warn | error
