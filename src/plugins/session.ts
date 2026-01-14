@@ -1,41 +1,64 @@
-import fp from "fastify-plugin";
-import cookie from "@fastify/cookie";
-import secureSession from "@fastify/secure-session";
+import fp from "fastify-plugin"
+import cookie from "@fastify/cookie"
+import secureSession from "@fastify/secure-session"
 
 function intFromEnv(name: string, fallback: number) {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback
+}
+
+function boolFromEnv(name: string, fallback: boolean) {
+  const raw = process.env[name]
+  if (raw === undefined) return fallback
+  return raw === "true"
+}
+
+export function getSessionCookieName() {
+  return process.env.SESSION_COOKIE_NAME ?? "ranked_session"
+}
+
+export function getSessionCookieOptions(ttlSeconds: number) {
+  const secure = boolFromEnv(
+    "SESSION_COOKIE_SECURE",
+    process.env.NODE_ENV === "production"
+  )
+
+  /**
+   * Cookie SameSite:
+   * - If secure=true (HTTPS), and your frontend/backend are on different origins,
+   *   you typically must use SameSite=None. Browsers require Secure when SameSite=None.
+   * - If secure=false (HTTP localhost), SameSite=None would be rejected, so use Lax.
+   */
+  const sameSite: "lax" | "none" = secure ? "none" : "lax"
+
+  return {
+    path: "/",
+    httpOnly: true as const,
+    secure,
+    sameSite,
+    // Browser cookie lifetime (maxAge is seconds)
+    maxAge: ttlSeconds,
+  }
 }
 
 export default fp(async (app) => {
-  const keyB64 = process.env.SESSION_KEY_BASE64;
-  if (!keyB64) throw new Error("Missing SESSION_KEY_BASE64");
+  const keyB64 = process.env.SESSION_KEY_BASE64
+  if (!keyB64) throw new Error("Missing SESSION_KEY_BASE64")
 
-  const secure = (process.env.SESSION_COOKIE_SECURE ?? "true") === "true";
+  // TTL in seconds (default 1 day)
+  const ttlSeconds = intFromEnv("SESSION_TTL_SECONDS", 24 * 60 * 60)
 
-  // TTL in seconds (e.g. 14 days)
-  const ttlSeconds = intFromEnv("SESSION_TTL_SECONDS", 24 * 60 * 60);
-
-  await app.register(cookie);
+  await app.register(cookie)
 
   await app.register(secureSession, {
     key: Buffer.from(keyB64, "base64"),
-    cookieName: process.env.SESSION_COOKIE_NAME ?? "ranked_session",
+    cookieName: getSessionCookieName(),
 
-    // Session validity window (checked using data inside the session cookie)
-    // Default is 1 day; set it explicitly so sessions don't last forever. :contentReference[oaicite:3]{index=3}
+    // Session validity window (seconds)
     expiry: ttlSeconds,
 
-    cookie: {
-      path: "/",
-      httpOnly: true,
-      sameSite: "lax",
-      secure,
-
-      // Browser cookie lifetime (separate from `expiry`). maxAge is seconds here. :contentReference[oaicite:4]{index=4}
-      maxAge: ttlSeconds,
-    },
-  });
-});
+    cookie: getSessionCookieOptions(ttlSeconds),
+  })
+})
