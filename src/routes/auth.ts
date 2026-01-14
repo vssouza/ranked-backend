@@ -2,8 +2,8 @@ import type {FastifyInstance} from "fastify";
 import {z} from "zod";
 import crypto from "crypto";
 
-import {supabaseAuth} from "@/lib/supabaseAuth.js";
-import {db} from "@/lib/db.js";
+import {supabaseAuth} from "../lib/supabaseAuth.js";
+import {db} from "../lib/db.js";
 
 const ExchangeBody = z.object({
   accessToken: z.string().min(10),

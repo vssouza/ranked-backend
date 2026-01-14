@@ -1,5 +1,5 @@
 import fp from "fastify-plugin";
-import {db} from "@/lib/db.js";
+import { db } from "../lib/db.js";
 
 declare module "fastify" {
   interface FastifyRequest {

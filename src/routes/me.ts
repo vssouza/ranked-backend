@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
-import { db } from "@/lib/db.js"
-import { exists } from "@/lib/db-helpers.js"
-import { MeResponseSchema } from "@/schemas/me.schema.js"
+import { db } from "../lib/db.js"
+import { exists } from "../lib/db-helpers.js"
+import { MeResponseSchema } from "../schemas/me.schema.js"
 
 type MembershipRow = {
   organisation_id: string

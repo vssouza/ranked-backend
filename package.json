@@ -7,9 +7,9 @@
     "doc": "docs"
   },
   "scripts": {
-    "dev": "tsx --tsconfig tsconfig.json --require tsconfig-paths/register src/index.ts",
+    "dev": "tsx --tsconfig tsconfig.json --require tsconfig-paths/register src/bootstrap.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/bootstrap.js"
   },
   "keywords": [],
   "author": "",

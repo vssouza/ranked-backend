@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
-import { db } from "@/lib/db.js"
-import { ListMemberAddressesResponseSchema } from "@/schemas/member-addresses.schema.js"
+import { db } from "../lib/db.js"
+import { ListMemberAddressesResponseSchema } from "../schemas/member-addresses.schema.js"
 
 type MemberAddressRow = {
   id: string
