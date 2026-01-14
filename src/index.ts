@@ -1,13 +1,15 @@
-import {buildApp} from "./app.js";
+import { buildApp } from "./app.js"
 
-const port = Number(process.env.PORT) || 3000;
-const host = "0.0.0.0";
+const app = await buildApp()
 
-const app = buildApp();
+const port = Number(process.env.PORT) || 3000
+const host = process.env.HOST ?? "0.0.0.0"
 
-await app.ready();
-
-app.listen({port, host}).catch((err) => {
-  app.log.error(err);
-  process.exit(1);
-});
+try {
+  await app.ready()
+  await app.listen({ port, host })
+  app.log.info(`Server listening on http://${host}:${port}`)
+} catch (err: unknown) {
+  app.log.error(err)
+  process.exit(1)
+}
