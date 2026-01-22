@@ -1,33 +1,37 @@
 // src/lib/me-payload.ts
-import { db } from "../lib/db.js"
-import { exists } from "../lib/db-helpers.js"
+import { db } from "../lib/db.js";
+import { exists } from "../lib/db-helpers.js";
 
 type MembershipRow = {
-  organisation_id: string
-  roles: string[] | null
-  slug: string
-  name: string
-}
+  organisation_id: string;
+  roles: string[] | null;
+  slug: string;
+  name: string;
+};
+
+type PreferenceRow = {
+  active_organisation_id: string | null;
+};
 
 function pickRole(
   roles: string[] | null | undefined
 ): "owner" | "admin" | "organiser" | "member" {
-  const set = new Set((roles ?? []).map((r) => String(r).toUpperCase()))
-  if (set.has("OWNER")) return "owner"
-  if (set.has("ADMIN")) return "admin"
-  if (set.has("ORGANISER") || set.has("ORGANIZER")) return "organiser"
-  return "member"
+  const set = new Set((roles ?? []).map((r) => String(r).toUpperCase()));
+  if (set.has("OWNER")) return "owner";
+  if (set.has("ADMIN")) return "admin";
+  if (set.has("ORGANISER") || set.has("ORGANIZER")) return "organiser";
+  return "member";
 }
 
 export async function buildMePayload(member: {
-  internal_id: string
-  email: string
-  username: string | null
-  display_name: string
+  internal_id: string;
+  email: string;
+  username: string | null;
+  display_name: string;
 }) {
-  const memberId = member.internal_id
+  const memberId = member.internal_id;
 
-  const [isSuperAdmin, memberships, hasAddresses] = await Promise.all([
+  const [isSuperAdmin, memberships, hasAddresses, prefs] = await Promise.all([
     exists(
       db,
       `select 1 from public.ranked_admins where member_id = $1 limit 1`,
@@ -54,7 +58,27 @@ export async function buildMePayload(member: {
       `select 1 from public.member_addresses where member_id = $1 limit 1`,
       [memberId]
     ),
-  ])
+    db.query<PreferenceRow>(
+      `
+      select active_organisation_id
+      from public.member_preferences
+      where member_id = $1
+      limit 1
+      `,
+      [memberId]
+    ),
+  ]);
+
+  const activeOrganisationId = prefs.rows[0]?.active_organisation_id ?? null;
+
+  // Optional safety: ensure active org is still in memberships (org not removed)
+  const membershipOrgIds = new Set(
+    memberships.rows.map((r) => r.organisation_id)
+  );
+  const safeActiveOrgId =
+    activeOrganisationId && membershipOrgIds.has(activeOrganisationId)
+      ? activeOrganisationId
+      : null;
 
   return {
     ok: true as const,
@@ -74,5 +98,6 @@ export async function buildMePayload(member: {
       role: pickRole(r.roles),
     })),
     hasAddresses,
-  }
+    activeOrganisationId: safeActiveOrgId,
+  };
 }

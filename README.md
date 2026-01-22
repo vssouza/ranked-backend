@@ -33,3 +33,30 @@ APP_BASE_URL=https://api.yourdomain.com
 SESSION_COOKIE_DOMAIN=.rankedapp.gg
 
 LOG_LEVEL=debug | info | warn | error
+
+
+Now any route that needs org context can do:
+
+app.get("/something", { preHandler: requireOrg }, async (req, reply) => {
+  // req.org is guaranteed
+})
+
+
+Example: org-scoped route usage
+
+import type { FastifyInstance } from "fastify"
+import { requireOrg } from "../lib/requireOrg.js"
+import { db } from "../lib/db.js"
+
+export async function registerOrgDemoRoutes(app: FastifyInstance) {
+  app.get("/org-demo", { preHandler: requireOrg }, async (req) => {
+    const orgId = req.org!.id
+
+    const { rows } = await db.query(
+      `select $1::uuid as org_id, $2::text as org_name`,
+      [orgId, req.org!.name]
+    )
+
+    return { ok: true, org: req.org, role: req.orgRole, debug: rows[0] }
+  })
+}

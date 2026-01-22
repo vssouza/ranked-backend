@@ -53,6 +53,10 @@ type MembershipRow = {
   name: string
 }
 
+type PreferenceRow = {
+  active_organisation_id: string | null
+}
+
 function pickRole(
   roles: string[] | null | undefined
 ): "owner" | "admin" | "organiser" | "member" {
@@ -66,7 +70,7 @@ function pickRole(
 async function buildMeLikePayload(member: MemberRow) {
   const memberId = member.internal_id
 
-  const [isSuperAdmin, memberships, hasAddresses] = await Promise.all([
+  const [isSuperAdmin, memberships, hasAddresses, prefs] = await Promise.all([
     exists(
       db,
       `select 1 from public.ranked_admins where member_id = $1 limit 1`,
@@ -93,7 +97,24 @@ async function buildMeLikePayload(member: MemberRow) {
       `select 1 from public.member_addresses where member_id = $1 limit 1`,
       [memberId]
     ),
+    db.query<PreferenceRow>(
+      `
+      select active_organisation_id
+      from public.member_preferences
+      where member_id = $1
+      limit 1
+      `,
+      [memberId]
+    ),
   ])
+
+  const preferredActiveOrgId = prefs.rows[0]?.active_organisation_id ?? null
+  const membershipOrgIds = new Set(memberships.rows.map((r) => r.organisation_id))
+
+  const activeOrganisationId =
+    preferredActiveOrgId && membershipOrgIds.has(preferredActiveOrgId)
+      ? preferredActiveOrgId
+      : null
 
   return {
     user: {
@@ -112,6 +133,7 @@ async function buildMeLikePayload(member: MemberRow) {
       role: pickRole(r.roles),
     })),
     hasAddresses,
+    activeOrganisationId, // ✅ NEW
   }
 }
 
@@ -239,7 +261,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         const csrfToken = newCsrfToken()
         req.session.set("csrfToken", csrfToken)
 
-        // ✅ Return core shape immediately (no extra /me call)
         const payload = await buildMeLikePayload(member)
         return reply.send({ ...payload, ok: true, csrfToken })
       } catch (err: unknown) {
@@ -257,7 +278,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           )
         }
 
-        // Map common DB conflicts nicely
         if (isPgUniqueViolation(err)) {
           const c = pgConstraint(err) ?? ""
           if (c.includes("username"))
@@ -336,14 +356,13 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     async (req: ExchangeRequest, reply: FastifyReply) => {
       const { accessToken } = ExchangeBodySchema.parse(req.body)
 
-      const provider = "supabase"
-
       const { data, error } = await supabaseAuth.auth.getUser(accessToken)
       if (error || !data?.user) {
         return reply.code(401).send({ error: "Invalid token" })
       }
 
       const user = data.user
+      const provider = "supabase"
       const subject = user.id
       const email = user.email ?? ""
       const displayName = ""
