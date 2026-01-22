@@ -103,7 +103,7 @@ async function buildMeLikePayload(member: MemberRow) {
       displayName: member.display_name ?? "",
     },
     isSuperAdmin,
-    memberships: memberships.rows.map((r) => ({
+    memberships: memberships.rows.map((r: MembershipRow) => ({
       org: {
         id: r.organisation_id,
         slug: r.slug,
@@ -277,14 +277,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
 
   /**
    * Login (backend-owned sign-in)
-   *
-   * Client posts email/password to backend.
-   * Backend authenticates with provider (currently Supabase) and creates cookie session.
    */
   app.post("/auth/login", async (req: LoginRequest, reply: FastifyReply) => {
     const { email, password } = LoginBodySchema.parse(req.body)
 
-    // Provider authentication stays backend-side
     const { data, error } = await supabaseAuth.auth.signInWithPassword({
       email,
       password,
@@ -301,7 +297,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     const provider = "supabase"
     const subject = user.id
 
-    // Upsert member (same as exchange)
     const { rows } = await db.query<MemberRow>(
       `
       insert into public.members (
@@ -323,23 +318,18 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     const member = rows[0]
     if (!member) return reply.code(500).send({ error: "LOGIN_FAILED" })
 
-    // Session + CSRF
     req.session.set("memberId", member.internal_id)
     req.session.set("sessionIssuedAt", Date.now())
 
     const csrfToken = newCsrfToken()
     req.session.set("csrfToken", csrfToken)
 
-    // ✅ Return core shape immediately (no extra /me call)
     const payload = await buildMeLikePayload(member)
     return reply.send({ ...payload, ok: true, csrfToken })
   })
 
   /**
    * Exchange provider token -> backend session cookie
-   *
-   * Still supported for SSO flows, but the client can remain vendor-agnostic
-   * by using /auth/login instead of calling the provider directly.
    */
   app.post(
     "/auth/exchange",
@@ -385,7 +375,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       const csrfToken = newCsrfToken()
       req.session.set("csrfToken", csrfToken)
 
-      // ✅ Return core shape immediately (no extra /me call)
       const payload = await buildMeLikePayload(member)
       return reply.send({ ...payload, ok: true, csrfToken })
     }
@@ -393,7 +382,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
 
   /**
    * Refresh backend session + rotate CSRF token
-   * Returns SAME core shape as /me, plus csrfToken.
    */
   app.get("/auth/refresh-session", async (req, reply) => {
     if (req.authExpiredReason === "ABSOLUTE_TTL") {
@@ -416,7 +404,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     const csrfToken = newCsrfToken()
     req.session.set("csrfToken", csrfToken)
 
-    // ✅ Same core shape as /me
     const payload = await buildMeLikePayload(req.member as MemberRow)
     return reply.send({ ...payload, ok: true, csrfToken })
   })
