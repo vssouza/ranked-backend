@@ -19,6 +19,7 @@ function parseCorsOrigins(raw: string | undefined): string[] {
 export async function buildApp() {
   const app = Fastify({ logger: true })
 
+
   app.setErrorHandler((error, _req, reply) => {
     if (error instanceof ZodError) {
       return reply.status(400).send({

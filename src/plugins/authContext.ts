@@ -1,85 +1,107 @@
-import fp from "fastify-plugin";
-import { db } from "../lib/db.js";
+// src/plugins/authContext.ts
+import fp from "fastify-plugin"
+import { db } from "../lib/db.js"
+import { getSessionCookieName, getSessionCookieOptions } from "./session.js"
 
-declare module "fastify" {
-  interface FastifyRequest {
-    member: null | {
-      internal_id: string;
-      email: string;
-      username: string | null;
-      display_name: string;
-    };
-    // request-scoped reason (not stored in session)
-    authExpiredReason?: "ABSOLUTE_TTL" | "MISSING_ISSUED_AT" | "MISSING_MEMBER";
-  }
+type Member = {
+  internal_id: string
+  email: string
+  username: string | null
+  display_name: string
 }
+
+const kMember = Symbol("member")
+const kAuthExpiredReason = Symbol("authExpiredReason")
 
 function intFromEnv(name: string, fallback: number) {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback
 }
 
-export default fp(async (app) => {
-  app.decorateRequest("member", null);
-  app.decorateRequest("authExpiredReason", undefined);
+export default fp(
+  async (app) => {
+    // ✅ Make decorators idempotent (prevents "already been added" in dev / double-register scenarios)
+    if (!app.hasRequestDecorator("member")) {
+      // Decorate using getter/setter so we don't need null defaults
+      app.decorateRequest("member", {
+        getter(this: any) {
+          return this[kMember]
+        },
+        setter(this: any, value: any) {
+          this[kMember] = value
+        },
+      })
+    }
 
-  app.addHook("preHandler", async (req) => {
-    const memberId = req.session.get("memberId") as string | undefined;
-    if (!memberId) return;
+    if (!app.hasRequestDecorator("authExpiredReason")) {
+      app.decorateRequest("authExpiredReason", {
+        getter(this: any) {
+          return this[kAuthExpiredReason]
+        },
+        setter(this: any, value: any) {
+          this[kAuthExpiredReason] = value
+        },
+      })
+    }
 
-    /**
-     * Absolute max session age ("true logout")
-     * If enabled, this caps session lifetime even if the user is active.
-     */
-    const absoluteTtlSeconds = intFromEnv("SESSION_ABSOLUTE_TTL_SECONDS", 0);
-    if (absoluteTtlSeconds > 0) {
-      const issuedAt = req.session.get("sessionIssuedAt") as number | undefined;
+    const ttlSeconds = intFromEnv("SESSION_TTL_SECONDS", 24 * 60 * 60)
+    const absoluteTtlSeconds = intFromEnv(
+      "SESSION_ABSOLUTE_TTL_SECONDS",
+      ttlSeconds
+    )
 
-      // If missing, force re-login (safer than guessing)
+    app.addHook("onRequest", async (req, reply) => {
+      const memberId = req.session.get("memberId") as string | undefined
+      if (!memberId) return
+
+      const issuedAt = req.session.get("sessionIssuedAt") as number | undefined
       if (!issuedAt) {
-        req.session.delete();
-        req.member = null;
-        req.authExpiredReason = "MISSING_ISSUED_AT";
-        return;
+        req.authExpiredReason = "MISSING_ISSUED_AT"
+        req.session.delete()
+        reply.clearCookie(
+          getSessionCookieName(),
+          getSessionCookieOptions(ttlSeconds)
+        )
+        return
       }
 
-      const ageMs = Date.now() - issuedAt;
+      const ageMs = Date.now() - issuedAt
       if (ageMs > absoluteTtlSeconds * 1000) {
-        req.session.delete();
-        req.member = null;
-        req.authExpiredReason = "ABSOLUTE_TTL";
-        return;
+        req.authExpiredReason = "ABSOLUTE_TTL"
+        req.session.delete()
+        reply.clearCookie(
+          getSessionCookieName(),
+          getSessionCookieOptions(ttlSeconds)
+        )
+        return
       }
-    }
 
-    /**
-     * Rolling idle timeout (sliding expiration)
-     */
-    const rolling = (process.env.SESSION_ROLLING ?? "true") === "true";
-    if (rolling) {
-      const ttlSeconds = intFromEnv("SESSION_TTL_SECONDS", 24 * 60 * 60);
-      req.session.options({maxAge: ttlSeconds});
-      req.session.touch();
-    }
+      const { rows } = await db.query<Member>(
+        `
+        select internal_id, email, username, display_name
+        from public.members
+        where internal_id = $1
+        limit 1
+        `,
+        [memberId]
+      )
 
-    const {rows} = await db.query(
-      `select internal_id, email, username, display_name
-       from public.members
-       where internal_id = $1
-       limit 1`,
-      [memberId]
-    );
+      const member = rows[0]
+      if (!member) {
+        req.authExpiredReason = "MISSING_MEMBER"
+        req.session.delete()
+        reply.clearCookie(
+          getSessionCookieName(),
+          getSessionCookieOptions(ttlSeconds)
+        )
+        return
+      }
 
-    // If member is missing (deleted), clear the session
-    if (!rows[0]) {
-      req.session.delete();
-      req.member = null;
-      req.authExpiredReason = "MISSING_MEMBER";
-      return;
-    }
-
-    req.member = rows[0];
-  });
-});
+      req.member = member
+    })
+  },
+  // ✅ Give the plugin a stable name to help Fastify identify it consistently
+  { name: "auth-context" }
+)
