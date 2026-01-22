@@ -65,7 +65,7 @@ export async function buildMePayload(member: {
       displayName: member.display_name ?? "",
     },
     isSuperAdmin,
-    memberships: memberships.rows.map((r: MembershipRow) => ({
+    memberships: memberships.rows.map((r) => ({
       org: {
         id: r.organisation_id,
         slug: r.slug,

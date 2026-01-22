@@ -61,7 +61,7 @@ export async function registerMemberAddressesRoutes(app: FastifyInstance) {
     )
 
     const data = {
-      items: rows.map((r: MemberAddressRow) => ({
+      items: rows.map((r) => ({
         id: r.id,
         memberId: r.member_id,
 

@@ -103,7 +103,7 @@ async function buildMeLikePayload(member: MemberRow) {
       displayName: member.display_name ?? "",
     },
     isSuperAdmin,
-    memberships: memberships.rows.map((r: MembershipRow) => ({
+    memberships: memberships.rows.map((r) => ({
       org: {
         id: r.organisation_id,
         slug: r.slug,
